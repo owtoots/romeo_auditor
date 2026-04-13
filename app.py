@@ -168,7 +168,7 @@ elif st.session_state.status == "Stopped":
     edited_df = st.data_editor(st.session_state.scan_data)
     st.session_state.scan_data = edited_df
 
-eelif st.session_state.status == "Generating_PDF":
+elif st.session_state.status == "Generating_PDF":
     with st.spinner("Generating Dispute Report..."):
         pdf_path = create_pdf(target_name, "AI Photo Analysis", st.session_state.scan_data)
         with open(pdf_path, "rb") as pdf_file:
