@@ -17,13 +17,19 @@ def count_with_ai(image_buffer):
     if not ai_configured:
         return None, "API Key missing in Streamlit Secrets."
     try:
-        # Use the latest Gemini 3 Flash model
-        model = genai.GenerativeModel("gemini-3-flash")
-        img_for_ai = Image.open(image_buffer)
-        prompt = """Identify and count every item of merchandise in this image. 
-        Respond ONLY with a JSON array: [{"Item": "Name", "AI_Count": 5}]"""
+        # 1. Initialize the model inside the function to avoid 'str' errors
+        model_brain = genai.GenerativeModel("gemini-3-flash")
         
-        response = model.generate_content([prompt, img_for_ai])
+        # 2. Open the image
+        img_for_ai = Image.open(image_buffer)
+        
+        # 3. Create the prompt
+        prompt = "Identify and count every item of merchandise. Return ONLY a JSON list: [{'Item': 'name', 'AI_Count': 1}]"
+        
+        # 4. Generate content using the new variable name to avoid confusion
+        response = model_brain.generate_content([prompt, img_for_ai])
+        
+        # 5. Process the JSON
         raw_text = response.text.replace('```json', '').replace('```', '').strip()
         data = json.loads(raw_text)
         
@@ -32,8 +38,7 @@ def count_with_ai(image_buffer):
             df['Auditor_Count'] = 0
         return df, None
     except Exception as e:
-        return None, f"AI Error: {str(e)}"
-
+        return None, f"AI Analysis Error: {str(e)}"
 # 2. PDF ENGINE
 def create_pdf(target, data):
     pdf = FPDF()
