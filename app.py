@@ -101,3 +101,7 @@ with c3:
     if st.button("🗑️ RESET"):
         st.session_state.update({'status': 'Idle', 'scan_data': None, 'img': None})
         st.rerun()
+with c4:
+    if st.button("📤 UPLOAD"):
+        st.session_state.status = "PDF"
+        st.rerun()
