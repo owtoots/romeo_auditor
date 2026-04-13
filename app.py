@@ -23,7 +23,7 @@ def count_with_ai(image_buffer):
         
     try:
         # Using the reliable 2.0 Flash model
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        model = "gemini-3-flash" 
         img_for_ai = Image.open(image_buffer)
         
         prompt = """
