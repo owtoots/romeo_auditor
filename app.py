@@ -17,32 +17,35 @@ try:
 except Exception as e:
     ai_configured = False
 
-def count_with_ai(image_data):
+
     """Sends the image to Gemini Vision to count merchandise."""
     if not ai_configured:
         return None, "API Key missing in Streamlit Secrets."
         
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-
+        # Using the latest stable model
+        model = genai.GenerativeModel('gemini-2.0-flash') 
         
-        # The exact prompt instructing the AI how to act like an auditor
+        # Open the image properly
+        raw_img = Image.open(image_data)
+        
         prompt = """
         You are a retail inventory auditor. Look at this shelf or bin.
         Identify the merchandise and count exactly how many of each item you see.
-        Respond ONLY with a valid JSON array of objects. Do not use markdown blocks.
+        Respond ONLY with a valid JSON array of objects.
         Format: [{"Item": "Item Name", "AI_Count": 5}, {"Item": "Another Item", "AI_Count": 2}]
         """
         
-        response = model.generate_content([prompt, img])
+        # Pass the opened image directly to the model
+        response = model.generate_content([prompt, raw_img])
         
-        # Clean up the response in case the AI adds markdown ticks
+        # Clean up response
         raw_text = response.text.replace('```json', '').replace('```', '').strip()
         data = json.loads(raw_text)
         
-        # Convert to Pandas DataFrame and add a blank Auditor column for the UI
         df = pd.DataFrame(data)
-        df['Auditor_Count'] = 0 
+        if 'Auditor_Count' not in df.columns:
+            df['Auditor_Count'] = 0 
         return df, None
         
     except Exception as e:
