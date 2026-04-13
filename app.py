@@ -24,7 +24,7 @@ def count_with_ai(image_data):
         
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
-        img = Image.open(image_data)
+
         
         # The exact prompt instructing the AI how to act like an auditor
         prompt = """
