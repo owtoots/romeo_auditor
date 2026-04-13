@@ -398,9 +398,6 @@ with c3:
         st.rerun()
 
 with c4:
-    if st.button("📤 (U) UPLOAD", key="upload"):
-        if st.session_state.status == "Stopped" and st.session_state.scan_data is not None:
-            st.session_state.status = "Generating_PDF"
-            st.rerun()
-        else:
-            st.error("You must finish a scan and AI process first.")
+    if st.button("📤 UPLOAD"):
+        st.session_state.status = "Generating_PDF"
+        st.rerun()
