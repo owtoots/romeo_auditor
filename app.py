@@ -168,15 +168,27 @@ elif st.session_state.status == "Stopped":
     edited_df = st.data_editor(st.session_state.scan_data)
     st.session_state.scan_data = edited_df
 
-elif st.session_state.status == "Generating_PDF":
+eelif st.session_state.status == "Generating_PDF":
     with st.spinner("Generating Dispute Report..."):
         pdf_path = create_pdf(target_name, "AI Photo Analysis", st.session_state.scan_data)
         with open(pdf_path, "rb") as pdf_file:
             pdf_bytes = pdf_file.read()
             
         st.success("✅ Audit Report Generated Successfully!")
-        st.download_button(label="📄 Download PDF Dispute Report", data=pdf_bytes, file_name=pdf_path, mime="application/pdf")
-
+        
+        # --- NEW INTERACTIVE DOWNLOAD BUTTON ---
+        download_clicked = st.download_button(
+            label="📄 Download PDF Dispute Report", 
+            data=pdf_bytes, 
+            file_name=pdf_path, 
+            mime="application/pdf"
+        )
+        
+        # If the user clicks the download button, trigger this!
+        if download_clicked:
+            st.balloons()
+            st.success("🎉 Download complete! The PDF is saved to your phone.")
+            st.info("Press 🗑️ (R) REPEAT below to audit the next fixture.")
 # --- CAPTURE CONTROLS ---
 st.header("2. Capture Controls")
 c1, c2, c3, c4 = st.columns(4)
