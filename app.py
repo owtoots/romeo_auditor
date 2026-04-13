@@ -18,7 +18,8 @@ def count_with_ai(image_buffer):
         return None, "API Key missing in Streamlit Secrets."
     try:
         # Initialize the latest model
-        model_brain = genai.GenerativeModel("gemini-3-flash")
+        model_brain = genai.GenerativeModel("gemini-1.5-flash-latest")
+
         
         # Open the image from the camera buffer
         img_for_ai = Image.open(image_buffer)
