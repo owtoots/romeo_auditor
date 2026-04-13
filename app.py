@@ -116,17 +116,27 @@ st.header("Status Monitor")
 
 if st.session_state.status == "Recording":
     if scan_instruction == "Single Photo Capture":
-        st.error(f"📸 READY: {action_text} Press E when captured.")
+        st.error(f"📸 READY: {action_text}")
+        # THIS is the magic line that opens the phone camera!
+        captured_photo = st.camera_input("Take a clear photo")
+        if captured_photo:
+            st.success("✅ Photo captured! Press (E) END to process.")
+            
     else:
-        st.error(f"🎥 LIVE SCANNING: {action_text} Press E when finished.")
+        st.error(f"🎥 LIVE SCANNING: {action_text}")
+        # THIS prompts the phone to record or upload a video!
+        uploaded_video = st.file_uploader("Record or Upload Zigzag Video", type=["mp4", "mov", "avi"])
+        if uploaded_video:
+            st.success("✅ Video secured! Press (E) END to process.")
 
 elif st.session_state.status == "Stopped":
-    st.success(f"Capture complete for {target_name}. Review data before uploading.")
+    st.success(f"Media secured for {target_name}.")
+    st.warning("⚙️ AI Processing is currently in Simulation Mode (Mock Data generated).")
     st.dataframe(st.session_state.scan_data)
 
 elif st.session_state.status == "Processing":
     with st.spinner(f"Generating Dispute Report for {target_name}..."):
-        time.sleep(1) # Simulating server processing time
+        time.sleep(1) 
         
         pdf_path = create_pdf(target_name, scan_instruction, st.session_state.scan_data)
         
@@ -157,12 +167,12 @@ with c2:
         if st.session_state.status == "Recording":
             st.session_state.status = "Stopped"
             
-            # --- MOCK DATA --- 
-            # This simulates what your AI Vision model will eventually return
+            # --- MOCK DATA INJECTION --- 
+            # We keep the simulation here so the PDF still generates for your testing
             mock_data = pd.DataFrame({
                 "Item": ["Lays Classic 50g", "Piattos Cheese", "Coke 500ml", "Missing Item"],
                 "AI_Count": [15, 20, 0, 5],
-                "Auditor_Count": [12, 20, 0, 0] # Simulating an auditor missing 3 Lays and 5 "Missing Items"
+                "Auditor_Count": [12, 20, 0, 0] 
             })
             st.session_state.scan_data = mock_data
             st.rerun()
