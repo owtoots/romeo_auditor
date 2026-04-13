@@ -23,7 +23,7 @@ def count_with_ai(image_data):
         return None, "API Key missing in Streamlit Secrets."
         
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         img = Image.open(image_data)
         
         # The exact prompt instructing the AI how to act like an auditor
