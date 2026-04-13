@@ -10,30 +10,88 @@ import io
 # ==========================================
 # AI VISION CONFIGURATION
 # ==========================================
-# Securely pull the API key from Streamlit Secrets
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     ai_configured = True
-except Exception as e:
+except Exception:
     ai_configured = False
 
-
+def count_with_ai(image_buffer):
     """Sends the image to Gemini Vision to count merchandise."""
     if not ai_configured:
         return None, "API Key missing in Streamlit Secrets."
         
     try:
-        # Using the latest stable model
+        # Using the absolute latest stable model
         model = genai.GenerativeModel('gemini-2.0-flash') 
         
-        # Open the image properly
-        raw_img = Image.open(image_data)
+        # Open the image from the buffer
+        img_for_ai = Image.open(image_buffer)
         
         prompt = """
         You are a retail inventory auditor. Look at this shelf or bin.
         Identify the merchandise and count exactly how many of each item you see.
         Respond ONLY with a valid JSON array of objects.
         Format: [{"Item": "Item Name", "AI_Count": 5}, {"Item": "Another Item", "AI_Count": 2}]
+        """
+        
+        # Send to Gemini
+        response = model.generate_content([prompt, img_for_ai])
+        
+        # Clean up the response
+        raw_text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(raw_text)
+        
+        df = pd.DataFrame(data)
+        if 'Auditor_Count' not in df.columns:
+            df['Auditor_Count'] = 0 
+        return df, None
+        
+    except Exception as e:
+        return None, f"AI Analysis Error: {str(e)}"
+
+# ==========================================
+# PDF GENERATOR ENGINE
+# ==========================================
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 15)
+        self.set_text_color(0, 94, 90) 
+        self.cell(0, 10, 'ROMEO AUDITOR: STORE 2358', 0, 1, 'C')
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+def create_pdf(target_name, scan_type, scan_data):
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt=f"Target: {target_name}", ln=1, align='L')
+    pdf.ln(5)
+    
+    # Table Header
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(60, 10, 'Item', 1)
+    pdf.cell(30, 10, 'AI Count', 1)
+    pdf.cell(30, 10, 'Auditor', 1)
+    pdf.cell(30, 10, 'Diff', 1, 1)
+    
+    pdf.set_font("Arial", size=10)
+    for index, row in scan_data.iterrows():
+        pdf.cell(60, 10, str(row['Item'])[:25], 1)
+        pdf.cell(30, 10, str(row['AI_Count']), 1)
+        pdf.cell(30, 10, str(row['Auditor_Count']), 1)
+        diff = int(row['AI_Count']) - int(row['Auditor_Count'])
+        pdf.cell(30, 10, str(diff), 1, 1)
+    
+    output_path = f"Audit_{target_name.replace(' ', '_')}.pdf"
+    pdf.output(output_path)
+    return output_path
+
+# --- UI SECTION STARTS BELOW ---
         """
         
         # Pass the opened image directly to the model
