@@ -2,14 +2,59 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import time
+import json
+import google.generativeai as genai
+from PIL import Image
+import io
 
 # ==========================================
-# 1. PDF GENERATOR ENGINE
+# AI VISION CONFIGURATION
+# ==========================================
+# Securely pull the API key from Streamlit Secrets
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    ai_configured = True
+except Exception as e:
+    ai_configured = False
+
+def count_with_ai(image_data):
+    """Sends the image to Gemini Vision to count merchandise."""
+    if not ai_configured:
+        return None, "API Key missing in Streamlit Secrets."
+        
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        img = Image.open(image_data)
+        
+        # The exact prompt instructing the AI how to act like an auditor
+        prompt = """
+        You are a retail inventory auditor. Look at this shelf or bin.
+        Identify the merchandise and count exactly how many of each item you see.
+        Respond ONLY with a valid JSON array of objects. Do not use markdown blocks.
+        Format: [{"Item": "Item Name", "AI_Count": 5}, {"Item": "Another Item", "AI_Count": 2}]
+        """
+        
+        response = model.generate_content([prompt, img])
+        
+        # Clean up the response in case the AI adds markdown ticks
+        raw_text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(raw_text)
+        
+        # Convert to Pandas DataFrame and add a blank Auditor column for the UI
+        df = pd.DataFrame(data)
+        df['Auditor_Count'] = 0 
+        return df, None
+        
+    except Exception as e:
+        return None, f"AI Analysis Error: {str(e)}"
+
+# ==========================================
+# PDF GENERATOR ENGINE
 # ==========================================
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 15)
-        self.set_text_color(0, 94, 90) # 7-Eleven Dark Green
+        self.set_text_color(0, 94, 90) 
         self.cell(0, 10, 'ROMEO AUDITOR: STORE 2358', 0, 1, 'C')
         self.set_font('Arial', 'I', 10)
         self.set_text_color(100, 100, 100)
@@ -26,15 +71,13 @@ def create_pdf(target_name, scan_type, scan_data):
     pdf.add_page()
     pdf.set_font("Arial", size=12)
     
-    # Metadata Block
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(200, 10, txt=f"Target Location: {target_name}", ln=1, align='L')
     pdf.set_font("Arial", size=10)
-    pdf.cell(200, 6, txt=f"Capture Method: {scan_type}", ln=1, align='L')
+    pdf.cell(200, 6, txt=f"Capture Method: AI Vision Image Analysis", ln=1, align='L')
     pdf.cell(200, 6, txt="Staff on Duty: Joseph / Joy", ln=1, align='L')
     pdf.ln(10)
     
-    # Table Header
     pdf.set_font("Arial", 'B', 10)
     pdf.set_fill_color(200, 220, 255)
     pdf.cell(60, 10, 'Item Description', 1, 0, 'C', fill=True)
@@ -42,153 +85,128 @@ def create_pdf(target_name, scan_type, scan_data):
     pdf.cell(30, 10, 'Auditor Count', 1, 0, 'C', fill=True)
     pdf.cell(30, 10, 'Variance', 1, 1, 'C', fill=True)
     
-    # Table Rows
     pdf.set_font("Arial", size=10)
     for index, row in scan_data.iterrows():
-        pdf.cell(60, 10, str(row['Item']), 1, 0, 'L')
+        pdf.cell(60, 10, str(row['Item'])[:25], 1, 0, 'L')
         pdf.cell(30, 10, str(row['AI_Count']), 1, 0, 'C')
         pdf.cell(30, 10, str(row['Auditor_Count']), 1, 0, 'C')
         
-        # Color Code Variances (Red for shortages/overages, Green for perfect matches)
-        variance = row['AI_Count'] - row['Auditor_Count']
+        variance = int(row['AI_Count']) - int(row['Auditor_Count'])
         if variance != 0:
             pdf.set_text_color(200, 0, 0)
         else:
             pdf.set_text_color(0, 150, 0)
             
         pdf.cell(30, 10, f"{'+' if variance > 0 else ''}{variance}", 1, 1, 'C')
-        pdf.set_text_color(0, 0, 0) # Reset to black
+        pdf.set_text_color(0, 0, 0) 
     
-    # Clean filename so it doesn't break Windows/Mac file paths
     safe_name = target_name.replace(" ", "_").replace("/", "-")
     output_path = f"{safe_name}_Dispute_Report.pdf"
     pdf.output(output_path)
     return output_path
 
 # ==========================================
-# 2. STREAMLIT UI & LOGIC
+# STREAMLIT UI & LOGIC
 # ==========================================
 st.set_page_config(page_title="Romeo Auditor", layout="centered")
 
-st.title("🛡️ Romeo Auditor")
-st.write("Dynamic capture system for Store 2358 fixtures.")
+st.title("🛡️ Romeo Auditor: Store 2358")
+if not ai_configured:
+    st.error("⚠️ AI NOT CONFIGURED: Please add GEMINI_API_KEY to Streamlit Secrets.")
 
-# Initialize Session States
 if 'status' not in st.session_state:
     st.session_state.status = "Idle"
 if 'scan_data' not in st.session_state:
     st.session_state.scan_data = None
+if 'captured_image' not in st.session_state:
+    st.session_state.captured_image = None
 
-# --- TARGET LOCATION SETUP ---
+# --- TARGET SETUP ---
 st.header("1. Target Location Setup")
-
-fixture_type = st.radio("Select Fixture Type:", [
-    "Standard Gondola (Multi-sided)", 
-    "Wall Section / Chiller (Single-sided)", 
-    "Promo Bin / Dump Bin (Single Shot)"
-])
+fixture_type = st.radio("Select Fixture Type:", ["Gondola Shelf (Wide Photo)", "Promo Bin / Dump Bin (Top-Down)"])
 
 col_a, col_b = st.columns(2)
-
 with col_a:
-    fixture_id = st.text_input("Name/ID (e.g., G2, Wall-Chips, Promo-Door):", value="G2")
-
+    fixture_id = st.text_input("Name/ID (e.g., G2, Promo-Door):", value="G2")
 with col_b:
-    if fixture_type == "Standard Gondola (Multi-sided)":
+    if "Gondola" in fixture_type:
         side_id = st.selectbox("Select Side:", ["A (Front)", "B (Right)", "C (Back)", "D (Left)"])
         target_name = f"{fixture_id} - Side {side_id[0]}"
-        scan_instruction = "Zigzag Video Scan"
-        action_text = "Move Zigzag: Top-Right to Bottom-Right."
-    elif fixture_type == "Wall Section / Chiller (Single-sided)":
-        target_name = fixture_id
-        scan_instruction = "Zigzag Video Scan"
-        action_text = "Move Zigzag: Top-Right to Bottom-Right."
     else:
         target_name = fixture_id
-        scan_instruction = "Single Photo Capture"
-        action_text = "Take one clear, top-down photo of the entire bin."
 
-st.info(f"📍 **Current Target:** {target_name} | 📷 **Method:** {scan_instruction}")
+st.info(f"📍 **Target:** {target_name}")
 
-
-# --- STATUS MONITOR (TOP VISIBILITY) ---
+# --- STATUS MONITOR ---
 st.header("Status Monitor")
 
 if st.session_state.status == "Recording":
-    if scan_instruction == "Single Photo Capture":
-        st.error(f"📸 READY: {action_text}")
-        # THIS is the magic line that opens the phone camera!
-        captured_photo = st.camera_input("Take a clear photo")
-        if captured_photo:
-            st.success("✅ Photo captured! Press (E) END to process.")
-            
-    else:
-        st.error(f"🎥 LIVE SCANNING: {action_text}")
-        # THIS prompts the phone to record or upload a video!
-        uploaded_video = st.file_uploader("Record or Upload Zigzag Video", type=["mp4", "mov", "avi"])
-        if uploaded_video:
-            st.success("✅ Video secured! Press (E) END to process.")
+    st.error("📸 READY: Take a clear, well-lit photo of the merchandise.")
+    img_buffer = st.camera_input("Capture Merchandise")
+    
+    if img_buffer:
+        st.session_state.captured_image = img_buffer
+        st.success("✅ Image secured! Press (E) END to begin AI Analysis.")
+
+elif st.session_state.status == "Processing_AI":
+    with st.spinner(f"🧠 Romeo AI is actively counting items on {target_name}..."):
+        df, error = count_with_ai(st.session_state.captured_image)
+        
+        if error:
+            st.error(error)
+            st.session_state.status = "Idle"
+        else:
+            st.session_state.scan_data = df
+            st.session_state.status = "Stopped"
+            st.rerun()
 
 elif st.session_state.status == "Stopped":
-    st.success(f"Media secured for {target_name}.")
-    st.warning("⚙️ AI Processing is currently in Simulation Mode (Mock Data generated).")
-    st.dataframe(st.session_state.scan_data)
+    st.success(f"✅ AI Counting Complete for {target_name}.")
+    st.write("Input the 7-Eleven Auditor's count below to find the variance:")
+    
+    # Allow user to edit the Auditor Count column
+    edited_df = st.data_editor(st.session_state.scan_data)
+    st.session_state.scan_data = edited_df
 
-elif st.session_state.status == "Processing":
-    with st.spinner(f"Generating Dispute Report for {target_name}..."):
-        time.sleep(1) 
-        
-        pdf_path = create_pdf(target_name, scan_instruction, st.session_state.scan_data)
-        
+elif st.session_state.status == "Generating_PDF":
+    with st.spinner("Generating Dispute Report..."):
+        pdf_path = create_pdf(target_name, "AI Photo Analysis", st.session_state.scan_data)
         with open(pdf_path, "rb") as pdf_file:
             pdf_bytes = pdf_file.read()
             
         st.success("✅ Audit Report Generated Successfully!")
-        
-        st.download_button(
-            label="📄 Download PDF Dispute Report",
-            data=pdf_bytes,
-            file_name=pdf_path,
-            mime="application/pdf"
-        )
+        st.download_button(label="📄 Download PDF Dispute Report", data=pdf_bytes, file_name=pdf_path, mime="application/pdf")
 
-# --- CAPTURE CONTROLS (BOTTOM BUTTONS) ---
+# --- CAPTURE CONTROLS ---
 st.header("2. Capture Controls")
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    if st.button("🔴 (S) START", key="btn_start"):
+    if st.button("🔴 (S) START", key="start"):
         st.session_state.status = "Recording"
         st.session_state.scan_data = None
+        st.session_state.captured_image = None
         st.rerun()
 
 with c2:
-    if st.button("⏹️ (E) END", key="btn_end"):
-        if st.session_state.status == "Recording":
-            st.session_state.status = "Stopped"
-            
-            # --- MOCK DATA INJECTION --- 
-            # We keep the simulation here so the PDF still generates for your testing
-            mock_data = pd.DataFrame({
-                "Item": ["Lays Classic 50g", "Piattos Cheese", "Coke 500ml", "Missing Item"],
-                "AI_Count": [15, 20, 0, 5],
-                "Auditor_Count": [12, 20, 0, 0] 
-            })
-            st.session_state.scan_data = mock_data
+    if st.button("⏹️ (E) END", key="end"):
+        if st.session_state.status == "Recording" and st.session_state.captured_image is not None:
+            st.session_state.status = "Processing_AI"
             st.rerun()
         else:
-            st.warning("Press S to start recording first.")
+            st.warning("Please capture an image first.")
 
 with c3:
-    if st.button("🗑️ (R) REPEAT", key="btn_repeat"):
+    if st.button("🗑️ (R) REPEAT", key="repeat"):
         st.session_state.status = "Idle"
         st.session_state.scan_data = None
+        st.session_state.captured_image = None
         st.rerun()
 
 with c4:
-    if st.button("📤 (U) UPLOAD", key="btn_upload"):
+    if st.button("📤 (U) UPLOAD", key="upload"):
         if st.session_state.status == "Stopped" and st.session_state.scan_data is not None:
-            st.session_state.status = "Processing"
+            st.session_state.status = "Generating_PDF"
             st.rerun()
         else:
-            st.error("You must finish a scan (Press E) before uploading.")
+            st.error("You must finish a scan and AI process first.")
