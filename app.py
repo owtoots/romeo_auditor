@@ -17,9 +17,38 @@ def count_with_ai(image_buffer):
     if not ai_configured:
         return None, "API Key missing in Streamlit Secrets."
     try:
-        # Initialize the latest model
-        model_brain = genai.GenerativeModel("gemini-1.5-flash")
-
+        # 1. Ask Google EXACTLY what models your API key is allowed to use
+        allowed_models = [m.name for m in genai.list_models()]
+        
+        # 2. Automatically find the best "Flash" model available to you
+        best_model = "gemini-1.5-flash" # Default fallback
+        for m in allowed_models:
+            if "flash" in m:
+                best_model = m
+                break # Found the best one, stop looking!
+                
+        # 3. Use the auto-detected model
+        model_brain = genai.GenerativeModel(best_model)
+        img_for_ai = Image.open(image_buffer)
+        
+        prompt = "Identify and count every item of merchandise. Return ONLY a JSON list: [{'Item': 'name', 'AI_Count': 1}]"
+        
+        response = model_brain.generate_content([prompt, img_for_ai])
+        raw_text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(raw_text)
+        
+        df = pd.DataFrame(data)
+        if 'Auditor_Count' not in df.columns:
+            df['Auditor_Count'] = 0
+        return df, None
+        
+    except Exception as e:
+        # 4. If it STILL fails, print out the exact models you have access to so we can see!
+        try:
+            allowed = [m.name.replace('models/', '') for m in genai.list_models()]
+            return None, f"Your key has access to: {', '.join(allowed)}. Error details: {str(e)}"
+        except:
+            return None, f"AI Analysis Error: {str(e)}"
 
 
         
