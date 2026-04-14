@@ -4,79 +4,66 @@ from fpdf import FPDF
 import json
 import google.generativeai as genai
 from PIL import Image
-import io
 
-# 1. AI CONFIGURATION
+# ==========================================
+# 1. AI CONFIGURATION & FALLBACK ENGINE
+# ==========================================
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     ai_configured = True
-except:
+except Exception:
     ai_configured = False
 
 def count_with_ai(image_buffer):
     if not ai_configured:
         return None, "API Key missing in Streamlit Secrets."
+        
     try:
-        # 1. Ask Google EXACTLY what models your API key is allowed to use
-        allowed_models = [m.name for m in genai.list_models()]
-        
-        # 2. Automatically find the best "Flash" model available to you
-        best_model = "gemini-1.5-flash" # Default fallback
-        for m in allowed_models:
-            if "flash" in m:
-                best_model = m
-                break # Found the best one, stop looking!
-                
-        # 3. Use the auto-detected model
-        model_brain = genai.GenerativeModel(best_model)
         img_for_ai = Image.open(image_buffer)
+    except Exception:
+        return None, "Camera error: Could not read the image."
         
-        prompt = "Identify and count every item of merchandise. Return ONLY a JSON list: [{'Item': 'name', 'AI_Count': 1}]"
-        
-        response = model_brain.generate_content([prompt, img_for_ai])
-        raw_text = response.text.replace('```json', '').replace('```', '').strip()
-        data = json.loads(raw_text)
-        
-        df = pd.DataFrame(data)
-        if 'Auditor_Count' not in df.columns:
-            df['Auditor_Count'] = 0
-        return df, None
-        
-    except Exception as e:
-        # 4. If it STILL fails, print out the exact models you have access to so we can see!
+    prompt = """
+    You are a retail inventory auditor. Look at this shelf image.
+    Identify the merchandise and count exactly how many of each item you see.
+    Respond ONLY with a valid JSON array of objects.
+    Format: [{"Item": "Item Name", "AI_Count": 5}]
+    """
+    
+    # THE FALLBACK ENGINE: Tries the fastest model first, falls back to older reliable ones if Google gives a 404
+    fallback_models = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro",
+        "gemini-pro-vision"
+    ]
+    
+    last_error = ""
+    
+    for model_name in fallback_models:
         try:
-            allowed = [m.name.replace('models/', '') for m in genai.list_models()]
-            return None, f"Your key has access to: {', '.join(allowed)}. Error details: {str(e)}"
-        except:
-            return None, f"AI Analysis Error: {str(e)}"
+            model_brain = genai.GenerativeModel(model_name)
+            response = model_brain.generate_content([prompt, img_for_ai])
+            
+            raw_text = response.text.replace('```json', '').replace('```', '').strip()
+            data = json.loads(raw_text)
+            
+            df = pd.DataFrame(data)
+            if 'Auditor_Count' not in df.columns:
+                df['Auditor_Count'] = 0
+                
+            return df, None # Success! Stop looking and return the data.
+            
+        except Exception as e:
+            last_error = str(e)
+            continue # If this model 404s, loop back and try the next one on the list
+            
+    # If it tries every single model and still fails:
+    return None, f"API Error: Could not connect to any Gemini Vision models. Last error: {last_error}"
 
-
-        
-        # Open the image from the camera buffer
-        img_for_ai = Image.open(image_buffer)
-        
-        # Professional Auditor Prompt
-        prompt = """
-        You are a retail inventory auditor. Look at this shelf image.
-        Identify the merchandise and count exactly how many of each item you see.
-        Respond ONLY with a valid JSON array of objects.
-        Format: [{"Item": "Item Name", "AI_Count": 5}]
-        """
-        
-        response = model_brain.generate_content([prompt, img_for_ai])
-        
-        # Clean up the AI text to extract pure JSON
-        raw_text = response.text.replace('```json', '').replace('```', '').strip()
-        data = json.loads(raw_text)
-        
-        df = pd.DataFrame(data)
-        if 'Auditor_Count' not in df.columns:
-            df['Auditor_Count'] = 0
-        return df, None
-    except Exception as e:
-        return None, f"AI Analysis Error: {str(e)}"
-
+# ==========================================
 # 2. PDF ENGINE
+# ==========================================
 def create_pdf(target, data):
     pdf = FPDF()
     pdf.add_page()
@@ -85,7 +72,6 @@ def create_pdf(target, data):
     pdf.set_font("Arial", size=10)
     pdf.ln(5)
     
-    # Table headers for the PDF
     pdf.cell(80, 10, "Item Name", 1)
     pdf.cell(30, 10, "AI Count", 1)
     pdf.cell(30, 10, "Auditor", 1, 1)
@@ -99,7 +85,9 @@ def create_pdf(target, data):
     pdf.output(path)
     return path
 
+# ==========================================
 # 3. STREAMLIT UI
+# ==========================================
 st.set_page_config(page_title="Romeo Auditor", layout="centered")
 st.title("🛡️ Romeo Auditor: Store 2358")
 
@@ -111,8 +99,6 @@ loc_id = st.text_input("Location ID:", "G1")
 
 st.divider()
 st.subheader("Status Monitor")
-
-# --- APP LOGIC BY STATE ---
 
 if st.session_state.status == "Recording":
     cam = st.camera_input("Take a photo of the shelf")
@@ -133,7 +119,6 @@ elif st.session_state.status == "Processing":
 
 elif st.session_state.status == "Result":
     st.success("✅ AI Count Complete. Please verify the numbers.")
-    # Allow manual correction in the table
     st.session_state.scan_data = st.data_editor(st.session_state.scan_data, use_container_width=True)
     st.info("Press 📤 UPLOAD below to generate your PDF report.")
 
@@ -152,7 +137,9 @@ elif st.session_state.status == "PDF":
         st.warning("⚠️ No data found. Please scan first.")
         st.session_state.status = "Idle"
 
-# --- 4-BUTTON CONTROL PANEL ---
+# ==========================================
+# 4. CAPTURE CONTROLS
+# ==========================================
 st.divider()
 st.subheader("2. Capture Controls")
 c1, c2, c3, c4 = st.columns(4)
