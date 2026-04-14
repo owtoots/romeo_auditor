@@ -1,5 +1,5 @@
 streamlit
 pandas
 fpdf
-google-generativeai
-pillow
+google-generativeai>=0.8.0
+Pillow
