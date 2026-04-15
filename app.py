@@ -17,50 +17,23 @@ except Exception:
 def count_with_ai(image_buffer):
     if not ai_configured:
         return None, "API Key missing in Streamlit Secrets."
-        
     try:
-        img_for_ai = Image.open(image_buffer)
-    except Exception:
-        return None, "Camera error: Could not read the image."
+        # THE MAGIC LINE: Forcing the absolute most stable, modern model
+        model_brain = genai.GenerativeModel("gemini-1.5-flash")
         
-    prompt = """
-    You are a retail inventory auditor. Look at this shelf image.
-    Identify the merchandise and count exactly how many of each item you see.
-    Respond ONLY with a valid JSON array of objects.
-    Format: [{"Item": "Item Name", "AI_Count": 5}]
-    """
-    
-    # THE FALLBACK ENGINE: Tries the fastest model first, falls back to older reliable ones if Google gives a 404
-    fallback_models = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro",
-        "gemini-pro-vision"
-    ]
-    
-    last_error = ""
-    
-    for model_name in fallback_models:
-        try:
-            model_brain = genai.GenerativeModel("gemini-1.5-flash")
-
-            response = model_brain.generate_content([prompt, img_for_ai])
-            
-            raw_text = response.text.replace('```json', '').replace('```', '').strip()
-            data = json.loads(raw_text)
-            
-            df = pd.DataFrame(data)
-            if 'Auditor_Count' not in df.columns:
-                df['Auditor_Count'] = 0
-                
-            return df, None # Success! Stop looking and return the data.
-            
-        except Exception as e:
-            last_error = str(e)
-            continue # If this model 404s, loop back and try the next one on the list
-            
-    # If it tries every single model and still fails:
-    return None, f"API Error: Could not connect to any Gemini Vision models. Last error: {last_error}"
+        img_for_ai = Image.open(image_buffer)
+        prompt = "Identify and count every item of merchandise. Return ONLY a JSON list: [{'Item': 'name', 'AI_Count': 1}]"
+        
+        response = model_brain.generate_content([prompt, img_for_ai])
+        raw_text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(raw_text)
+        
+        df = pd.DataFrame(data)
+        if 'Auditor_Count' not in df.columns:
+            df['Auditor_Count'] = 0
+        return df, None
+    except Exception as e:
+        return None, f"AI Analysis Error: {str(e)}"
 
 # ==========================================
 # 2. PDF ENGINE
