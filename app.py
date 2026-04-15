@@ -42,7 +42,8 @@ def count_with_ai(image_buffer):
     
     for model_name in fallback_models:
         try:
-            model_brain = genai.GenerativeModel(model_name)
+            model_brain = genai.GenerativeModel("gemini-1.5-flash")
+
             response = model_brain.generate_content([prompt, img_for_ai])
             
             raw_text = response.text.replace('```json', '').replace('```', '').strip()
